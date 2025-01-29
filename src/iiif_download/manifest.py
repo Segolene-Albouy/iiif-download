@@ -126,10 +126,13 @@ class IIIFManifest:
         return get_license_url(mono_val(self.content.get("attribution", "")))
 
     @staticmethod
-    def get_image_resource(image_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def get_image_resource(image_data: Dict[str, Any], label:str="") -> Optional[Dict[str, Any]]:
         """Extract image resource from image data."""
         try:
-            return image_data.get("resource") or image_data.get("body")
+            resource = image_data.get("resource") or image_data.get("body")
+            if label:
+                resource["label"] = label
+            return resource
         except KeyError:
             return None
 
@@ -152,8 +155,9 @@ class IIIFManifest:
                 return resources
             canvases = self.content["sequences"][0]["canvases"]
             for canvas in canvases:
+                label = canvas.get("label", "")
                 for image in canvas["images"]:
-                    if resource := self.get_image_resource(image):
+                    if resource := self.get_image_resource(image, label=label):
                         resources.append(resource)
         except KeyError:
             try:
