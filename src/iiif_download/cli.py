@@ -12,6 +12,7 @@ def main():
     parser.add_argument("manifest_url", type=str, nargs="?", help="Single manifest URL to download")
     parser.add_argument("-f", "--file", type=str, help="File containing manifest URLs, one per line")
     parser.add_argument("-d", "--img_dir", type=str, help="Path where to save downloaded images")
+    parser.add_argument("-t", "--threads", type=int, default=20, help="Number of concurrent threads for downloads (default: 20)")
     args = parser.parse_args()
 
     # Ensure at least one input is provided
@@ -42,8 +43,9 @@ def main():
 
     only_one = len(manifests) == 1
     config.img_dir = args.img_dir or config.img_dir
+    config.threads = args.threads
 
-    logger.info(f"Downloading {len(manifests)} manifests inside {config.img_dir}")
+    logger.info(f"Downloading {len(manifests)} manifests inside {config.img_dir} using {config.threads} threads")
 
     for url in logger.progress(manifests, desc="Processing manifests"):
         try:

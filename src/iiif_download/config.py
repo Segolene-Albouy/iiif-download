@@ -30,7 +30,8 @@ class Config:
         # Network settings
         self._retry_attempts = 3
         self._sleep_time = {"default": 0.05, "gallica": 12}
-        self._semaphore = Semaphore(5)
+        self._threads = 20
+        self._semaphore = Semaphore(self._threads)
         self._timeout = 120  # 2 minutes
         self._user_agent = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0"
         self._proxy_settings = {}
@@ -78,6 +79,10 @@ class Config:
 
         if sleep_time := os.getenv("IIIF_SLEEP"):
             self._sleep_time = {"default": float(sleep_time), "gallica": 12}
+
+        if threads := os.getenv("IIIF_THREADS"):
+            self._threads = int(threads)
+            self._semaphore = Semaphore(self._threads)
 
         if debug := os.getenv("IIIF_DEBUG"):
             self._debug = debug.lower() in ("true", "1", "yes")
@@ -211,6 +216,18 @@ class Config:
         if url and "gallica" in url:
             return self._sleep_time["gallica"]
         return self._sleep_time["default"]
+
+    @property
+    def threads(self) -> int:
+        """Number of concurrent threads for downloads."""
+        return self._threads
+
+    @threads.setter
+    def threads(self, value: int):
+        if value < 1:
+            raise ValueError("Thread count must be at least 1")
+        self._threads = value
+        self._semaphore = Semaphore(value)
 
     @property
     def semaphore(self) -> Semaphore:

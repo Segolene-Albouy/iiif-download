@@ -248,18 +248,57 @@ class IIIFManifest:
                 self.save_log()
                 return self
 
-            logger.info(f"Downloading {len(images)} images from {self.url} inside {self.save_dir}")
-            for i, image in enumerate(logger.progress(images, desc="Downloading..."), start=1):
-                if self.config.debug and i > 6:
-                    break
-
-                success = await image.save()
-                if not success:
-                    logger.error(f"Failed to download image #{image.idx} ({image.sized_url()})")
-                    continue
-
-                if self.config.is_logged:
-                    self._manifest_info["images"][image.img_name] = image.sized_url()
+            logger.info(f"Downloading {len(images)} images from {self.url} inside {self.save_dir} using {self.config.threads} threads")
+            
+            # Use debug mode to limit number of images for testing
+            if self.config.debug:
+                images = images[:6]
+            
+            # Create rich progress display
+            progress = logger.create_rich_progress("Downloading images", total=len(images))
+            
+            with progress:
+                # Create main task
+                main_task = progress.add_task(f"[green]Downloading {len(images)} images with {self.config.threads} threads", total=len(images))
+                
+                # Create semaphore tasks to show active threads
+                thread_tasks = []
+                for i in range(self.config.threads):
+                    task_id = progress.add_task(f"[cyan]Thread {i+1}", total=1, visible=False)
+                    thread_tasks.append(task_id)
+                
+                # Track completed downloads
+                completed = 0
+                
+                async def download_with_progress(image):
+                    nonlocal completed
+                    # Find an available thread task to show activity
+                    thread_idx = completed % self.config.threads
+                    progress.update(thread_tasks[thread_idx], visible=True, description=f"[cyan]Thread {thread_idx+1}: {image.img_name}")
+                    
+                    try:
+                        result = await image.save()
+                        completed += 1
+                        progress.update(main_task, advance=1)
+                        
+                        if self.config.is_logged and result:
+                            self._manifest_info["images"][image.img_name] = image.sized_url()
+                        elif not result:
+                            logger.error(f"Failed to download image #{image.idx} ({image.sized_url()})")
+                        
+                        return result
+                    except Exception as e:
+                        completed += 1
+                        progress.update(main_task, advance=1)
+                        logger.error(f"Failed to download image #{image.idx} ({image.sized_url()}): {e}")
+                        return False
+                    finally:
+                        # Hide thread task when done
+                        progress.update(thread_tasks[thread_idx], visible=False)
+                
+                # Download images concurrently using asyncio.gather
+                download_tasks = [download_with_progress(image) for image in images]
+                results = await asyncio.gather(*download_tasks, return_exceptions=True)
 
             self.save_log()
             return self

@@ -2,6 +2,7 @@ Pillow
 requests
 urllib3
 tqdm
+rich
 aiohttp
 aiofiles
 

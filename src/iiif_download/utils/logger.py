@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any, Iterable, Optional, Union
 
 from tqdm import tqdm
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn, TimeRemainingColumn
+from rich.console import Console
 
 from ..config import config
 
@@ -217,6 +219,31 @@ class Logger:
             ncols=100,
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
         )
+
+    def create_rich_progress(self, desc: str = "Downloading", total: int = 100) -> Progress:
+        """
+        Create a rich progress display for concurrent downloads
+        
+        Args:
+            desc: Description of the progress
+            total: Total number of items
+            
+        Returns:
+            Progress: Rich progress object
+        """
+        progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TextColumn("•"),
+            TimeElapsedColumn(),
+            TextColumn("•"),
+            TimeRemainingColumn(),
+            console=Console(),
+            transient=False
+        )
+        return progress
 
     def log_failed_download(self, img_path: str, img_url: str):
         """
