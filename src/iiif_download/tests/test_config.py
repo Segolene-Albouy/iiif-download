@@ -29,18 +29,18 @@ def test_config_attribute_types():
     # Test sleep time dictionary
     assert isinstance(config.sleep_time, dict)
     assert "default" in config.sleep_time
-    assert "gallica" in config.sleep_time
+    assert "gallica.bnf.fr" in config.sleep_time
     assert isinstance(config.sleep_time["default"], (int, float))
-    assert isinstance(config.sleep_time["gallica"], (int, float))
+    assert isinstance(config.sleep_time["gallica.bnf.fr"], (int, float))
     assert config.sleep_time["default"] > 0
-    assert config.sleep_time["gallica"] > 0
+    assert config.sleep_time["gallica.bnf.fr"] > 0
 
     # Test path attributes
     assert isinstance(config.base_dir, Path)
     assert isinstance(config.img_dir, Path)
     assert isinstance(config.log_dir, Path)
 
-    # TODO test semaphore, user_agent, save_manifest, is_logged
+    # TODO test semaphore, user_agent, save_manifest, is_logged, domain_locks
 
     with pytest.raises(ValueError):
         config.max_size = -100
@@ -78,6 +78,9 @@ def test_config_value_constraints():
 
     with pytest.raises(TypeError, match="Sleep time must be a number"):
         config.set_sleep_time("invalid")
+
+    with pytest.raises(TypeError, match="Provider domain must be a string"):
+        config.set_sleep_time(123, 123)
 
 
 def test_config_env_override():

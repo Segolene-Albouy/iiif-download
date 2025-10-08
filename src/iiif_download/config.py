@@ -5,11 +5,14 @@ This module handles all configurable parameters of the package,
 providing both default values and methods to override them.
 """
 
+import asyncio
 import copy
 import os
-from asyncio import Semaphore
+from asyncio import Lock, Semaphore
 from pathlib import Path
+from time import time
 from typing import Dict, Optional, Union
+from urllib.parse import urlparse
 
 
 class Config:
@@ -29,7 +32,8 @@ class Config:
 
         # Network settings
         self._retry_attempts = 3
-        self._sleep_time = {"default": 0.05, "gallica": 12}
+        self._sleep_time = {"default": 0.05, "gallica.bnf.fr": 12}
+        self._domain_locks = {}  # {domain: {'lock': Lock(), 'last_time': float}}
         self._threads = 20
         self._semaphore = Semaphore(self._threads)
         self._timeout = 120  # 2 minutes
@@ -200,22 +204,47 @@ class Config:
         """Sleep time between requests for different providers."""
         return self._sleep_time.copy()
 
-    def set_sleep_time(self, value: float, provider: str = "default") -> None:
+    def set_sleep_time(self, sec_nb: float, provider_domain: str = "default") -> None:
         """
         Set sleep time for a specific provider.
         """
-        if not isinstance(value, (int, float)):
+        if not isinstance(sec_nb, (int, float)):
             raise TypeError("Sleep time must be a number")
-        if value <= 0:
+        if sec_nb <= 0:
             raise ValueError("Sleep time must be positive")
+        if not isinstance(provider_domain, str):
+            raise TypeError("Provider domain must be a string")
 
-        self._sleep_time[provider] = float(value)
+        if provider_domain != "default":
+            parsed = urlparse(provider_domain if "://" in provider_domain else f"http://{provider_domain}")
+            provider_domain = parsed.netloc or "default"
+
+        self._sleep_time[provider_domain] = float(sec_nb)
 
     def get_sleep_time(self, url: Optional[str] = None) -> float:
         """Get sleep time for a specific URL."""
-        if url and "gallica" in url:
-            return self._sleep_time["gallica"]
+        if url:
+            domain = urlparse(url).netloc
+            if domain in self._sleep_time:
+                return self._sleep_time[domain]
         return self._sleep_time["default"]
+
+    def get_domain_lock(self, url: str):
+        domain = urlparse(url).netloc
+        if domain not in self._domain_locks:
+            self._domain_locks[domain] = {"lock": Lock(), "last_time": 0}
+        return self._domain_locks[domain]
+
+    async def wait_for_domain(self, url: str):
+        """Wait appropriate time before making request to respect rate limits per domain."""
+        sleep_time = self.get_sleep_time(url)
+        lock_info = self.get_domain_lock(url)
+
+        async with lock_info["lock"]:
+            elapsed = time() - lock_info["last_time"]
+            if elapsed < sleep_time:
+                await asyncio.sleep(sleep_time - elapsed)
+            lock_info["last_time"] = time()
 
     @property
     def threads(self) -> int:
