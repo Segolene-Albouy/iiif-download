@@ -71,9 +71,22 @@ author = manifest.get_meta("author")
 images = manifest.images
 ```
 
-## Local install
+## Development
 
+Install locally
 ```bash
-python -m venv venv
-pip install -e .
+python -m venv venv && source venv/bin/activate
+pip install -e ".[dev]"
+```
+
+Run tests
+```bash
+pytest
+# pre-commit install
+pre-commit run --all-files
+```
+
+Publish on PyPi
+```bash
+git tag v<*.*.*> && git push origin v<*.*.*>
 ```
