@@ -72,7 +72,7 @@ def main():
                 manifest.save_dir = None if only_one else manifest.uid
 
                 with logger.quiet_mode():
-                    result = manifest.download(cleanup=not only_one, show_progress=True)
+                    result = manifest.download(cleanup=not only_one, progress=progress)
 
                 if result:
                     success_count += 1

@@ -56,7 +56,7 @@ source .env
 
 iiif-download https://example.org/manifest
 iiif-download -f test-manifests.txt
-iiif-download -d custom/path/to/images
+iiif-download -d custom/path/to/images https://example.org/manifest
 ```
 
 ### Metadata extraction
