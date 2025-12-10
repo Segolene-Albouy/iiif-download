@@ -1,15 +1,22 @@
+import time
 import json
 import logging
-import random
-import time
 import traceback
-from functools import wraps
 from pathlib import Path
-from typing import Any, Iterable, Optional, Union
+from typing import Any, Optional, Union
+from contextlib import contextmanager
+from functools import wraps
 
-from tqdm import tqdm
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn, TimeRemainingColumn
 from rich.console import Console
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    BarColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+    MofNCompleteColumn
+)
 
 from ..config import config
 
@@ -55,222 +62,120 @@ def pprint(o):
 
 
 class Logger:
-    """
-    Unified logger for the IIIF downloader that handles:
-    - Console output with colors
-    - File logging
-    - Progress bars
-    - Error tracking
-    """
-
-    # ANSI Color codes
-    COLORS = {
-        "error": "\033[91m",  # red
-        "warning": "\033[93m",  # yellow
-        "info": "\033[94m",  # blue
-        "success": "\033[92m",  # green
-        "magenta": "\033[95m",
-        "cyan": "\033[96m",
-        "white": "\033[97m",
-        "black": "\033[90m",
-        "bold": "\033[1m",
-        "underline": "\033[4m",
-        "end": "\033[0m",
-    }
-
-    EMOJIS = {
-        "error": "🚨",
-        "warning": "⚠️",
-        "info": "ℹ️",
-        "success": "✅",
-        "magenta": "🔮",
-        "cyan": "🪼",
-        "white": "🏳",
-        "black": "🏴",
-    }
-
     def __init__(self, log_dir: Union[str, Path]):
-        """
-        Initialize the logger with a directory for log files
-
-        Args:
-            log_dir: Directory where log files will be stored
-        """
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
-
-        self.compact = False
 
         self.error_log = self.log_dir / "error.log"
         self.download_log = self.log_dir / "download_fails.log"
 
-        # Setup logging
-        self.logger = logging.getLogger("iiif-downloader")
-        self.logger.setLevel(logging.INFO)
+        self.console = Console()
+        self._quiet = False
 
-        # Write errors in log file
         if config.is_logged:
+            self.file_logger = logging.getLogger("iiif-downloader")
+            self.file_logger.setLevel(logging.ERROR)
+            self.file_logger.propagate = False
+
             fh = logging.FileHandler(self.error_log)
             fh.setLevel(logging.ERROR)
-            self.logger.addHandler(fh)
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            fh.setFormatter(formatter)
+            self.file_logger.addHandler(fh)
 
-            # Only write info messages to console
-            ch = logging.StreamHandler()
-            ch.setLevel(logging.INFO)
-            self.logger.addHandler(ch)
-
-    @staticmethod
-    def _get_timestamp() -> str:
-        """Get current timestamp in readable format."""
-        return time.strftime("%Y-%m-%d %H:%M:%S")
-
-    def get_color(self, color: str) -> str:
-        """Get the ANSI color code for a message type."""
-        return self.COLORS.get(color, "")
-
-    def get_emoji(self, color: str) -> str:
-        """Get the ANSI color code for a message type."""
-        return self.EMOJIS.get(color, "")
-
-    def format_message(self, *msg: Any, msg_type: str = "info") -> str:
-        """Format a message with timestamp and colors."""
-        color = self.get_color(msg_type)
-        emoji = self.get_emoji(msg_type)
-        timestamp = self._get_timestamp()
-
-        formatted = "\n".join([f"{color}{self.COLORS['bold']}{pprint(m)}" for m in msg])
-        if self.compact:
-            return f"\n{emoji} {timestamp}{color}{formatted}{self.COLORS['end']}"
-
-        return f"\n\n{emoji} {timestamp}\n{color}{formatted}{self.COLORS['end']}\n\n"
-
-    @staticmethod
-    def format_exception(exception: Exception) -> str:
-        """Format an exception with timestamp and colors."""
-        msg = f"\n[{exception.__class__.__name__}] {str(exception)}"
-        msg += f"\n{traceback.format_exc()}"
-
-        return msg
+    @contextmanager
+    def quiet_mode(self):
+        """Suppress console output during progress operations."""
+        old_quiet = self._quiet
+        self._quiet = True
+        try:
+            yield
+        finally:
+            self._quiet = old_quiet
 
     def error(self, *msg: Any, exception: Optional[Exception] = None):
-        """
-        🚨 Log an error message and optionally an exception
+        """Log error message."""
+        message = self.format(*msg)
 
-        Args:
-            msg: Message to log
-            exception: Optional exception to include in log
-        """
-        error_msg = self.format_message(*msg, msg_type="error")
-        if exception:
-            error_msg += self.format_exception(exception)
+        if config.is_logged:
+            error_msg = message
+            if exception:
+                error_msg += f"\n{traceback.format_exc()}"
+            self.file_logger.error(error_msg)
 
-        self.logger.error(error_msg)
+        if not self._quiet:
+            self.console.print(f"[red]❌ {message}[/red]")
+
+    def warning(self, *msg: Any):
+        """Log warning message."""
+        message = self.format(*msg)
+        if not self._quiet:
+            self.console.print(f"[yellow]⚠️  {message}[/yellow]")
+
+    def info(self, *msg: Any):
+        """Log info message."""
+        message = self.format(*msg)
+        if not self._quiet:
+            self.console.print(f"[blue]ℹ️  {message}[/blue]")
+
+    def success(self, *msg: Any):
+        """Log success message."""
+        message = self.format(*msg)
+        if not self._quiet:
+            self.console.print(f"[green]✅ {message}[/green]")
 
     def log(self, *msg: Any, msg_type: Optional[str] = None):
         """Log a message with a given type."""
-        msg_type = msg_type or random.choice(list(self.COLORS.keys()))
-        self.logger.info(self.format_message(*msg, msg_type=msg_type))
+        msg_type = msg_type or "info"
+        if msg_type == "error":
+            self.error(*msg)
+        elif msg_type == "warning":
+            self.warning(*msg)
+        elif msg_type == "success":
+            self.success(*msg)
+        else:
+            self.info(*msg)
 
-    def warning(self, *msg: Any):
-        """⚠️ Log a warning message."""
-        self.logger.warning(self.format_message(*msg, msg_type="warning"))
-
-    def info(self, *msg: Any):
-        """ℹ️ Log an info message."""
-        self.logger.info(self.format_message(*msg, msg_type="info"))
-
-    def magic(self, *msg: Any):
-        """🔮 Log a magical message."""
-        self.logger.info(self.format_message(*msg, msg_type="magenta"))
-
-    def water(self, *msg: Any):
-        """🪼 Log a watery message."""
-        self.logger.info(self.format_message(*msg, msg_type="cyan"))
-
-    def white(self, *msg: Any):
-        """🏳 Log a white message."""
-        self.logger.info(self.format_message(*msg, msg_type="white"))
-
-    def black(self, *msg: Any):
-        """️🏴 Log a black message."""
-        self.logger.info(self.format_message(*msg, msg_type="black"))
-
-    def success(self, *msg: Any):
-        """✅ Log a success message."""
-        self.logger.info(self.format_message(*msg, msg_type="success"))
-
-    def progress(self, iterable: Iterable, desc: str = "", total: Optional[int] = None) -> tqdm:
-        """
-        Create a progress bar for an iteration
-
-        Args:
-            iterable: The iterable to track
-            desc: Description of the progress
-            total: Total number of items (optional)
-
-        Returns:
-            tqdm: Progress bar object
-        """
-        self.logger.info(desc)
-        return tqdm(
-            iterable,
-            total=total,
-            unit="image",
-            ncols=100,
-            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
-        )
-
-    def create_rich_progress(self, desc: str = "Downloading", total: int = 100) -> Progress:
-        """
-        Create a rich progress display for concurrent downloads
-        
-        Args:
-            desc: Description of the progress
-            total: Total number of items
-            
-        Returns:
-            Progress: Rich progress object
-        """
-        progress = Progress(
+    def create_progress(self, description: str = "Processing") -> Progress:
+        """Create a Rich progress bar with standard columns."""
+        return Progress(
             SpinnerColumn(),
             TextColumn("[bold blue]{task.description}"),
             BarColumn(),
-            TaskProgressColumn(),
+            MofNCompleteColumn(),
             TextColumn("•"),
             TimeElapsedColumn(),
             TextColumn("•"),
             TimeRemainingColumn(),
-            console=Console(),
+            console=self.console,
             transient=False
         )
-        return progress
 
     def log_failed_download(self, img_path: str, img_url: str):
-        """
-        Log a failed download attempt
-
-        Args:
-            img_path: Path of the image that should have been downloaded
-            img_url: URL that failed to be downloaded
-        """
+        """Log a failed download attempt."""
         with open(self.download_log, "a") as f:
             f.write(f"{img_path} {img_url}\n")
 
     def log_failed_manifests(self, manifest_url: str):
-        """
-        Log a failed manifest download attempt
-
-        Args:
-            manifest_url: URL of the manifest that failed to be downloaded
-        """
+        """Log a failed manifest download attempt."""
         with open(self.download_log, "a") as f:
             f.write(f"{manifest_url}\n")
 
     @staticmethod
-    def add_to_json(log_file, content, mode="w"):
-        """Add a message to the log file."""
+    def add_to_json(log_file: Path, content: dict, mode: str = "w"):
+        """Add content to JSON log file."""
         with open(log_file, mode) as f:
-            json.dump(content, f)
+            json.dump(content, f, indent=2)
+
+    @staticmethod
+    def format(*msg: Any) -> str:
+        """Format message for logging."""
+        return "\n\n".join(pprint(m) for m in msg)
+
+    @staticmethod
+    def format_exception(exception: Exception) -> str:
+        """Format exception for logging."""
+        return f"[{exception.__class__.__name__}] {exception}\n{traceback.format_exc()}"
 
 
 # Create a global logger instance

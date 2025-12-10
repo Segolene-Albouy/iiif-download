@@ -1,6 +1,7 @@
 import asyncio
 import gc
 import json
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from urllib.parse import unquote
@@ -92,20 +93,16 @@ class IIIFManifest:
             return False
 
     def get_meta(self, label: str) -> Optional[str]:
-        """Get value from manifest metadata"""
-        if not self.content:
-            return None
-
-        if "metadata" not in self.content:
+        if not self.content or "metadata" not in self.content:
             return None
 
         for meta in self.content.get("metadata", []):
             if value := get_meta_value(meta, label):
                 return value
-
         return None
 
     # TODO add a property metadata with every metadata provided
+    # TODO add a property canvas
 
     @property
     def license(self) -> str:
@@ -142,7 +139,7 @@ class IIIFManifest:
             if label:
                 resource["label"] = label
             return resource
-        except KeyError:
+        except (KeyError, TypeError):
             return None
 
     @property
@@ -176,7 +173,7 @@ class IIIFManifest:
                     for sub_item in item["items"][0]["items"]:
                         if resource := self.get_image_resource(sub_item):
                             resources.append(resource)
-            except KeyError as e:
+            except (KeyError, IndexError, TypeError) as e:
                 logger.error("Failed to extract images from manifest", exception=e)
 
         return resources
@@ -194,8 +191,6 @@ class IIIFManifest:
         # case were only static images are provided
         return img_id
 
-    # TODO add property canvas
-
     @property
     def images(self) -> List:
         if self._images is None:
@@ -203,7 +198,6 @@ class IIIFManifest:
         return self._images
 
     def get_images(self) -> List[IIIFImage]:
-        """Get all images from manifest."""
         images = []
         for i, resource in enumerate(self.get_resources()):
             images.append(
@@ -222,7 +216,10 @@ class IIIFManifest:
         if self.config.is_logged:
             logger.add_to_json(self.save_dir / "info.json", self._manifest_info)
 
-    async def _async_download_manifest(self):
+    async def _async_download_manifest(self, show_progress: bool = False):
+        import time
+        start_time = time.perf_counter()
+
         if self.config.is_logged:
             self._manifest_info = {"url": self.url, "license": "", "images": {}}
 
@@ -248,88 +245,51 @@ class IIIFManifest:
         # Semaphore local (event-loop safe)
         semaphore = asyncio.Semaphore(self.config.threads)
 
-        progress = logger.create_rich_progress("Downloading images", total=len(images))
+        async def download_image(image, progress_updater=None):
+            async with semaphore:
+                result = await image.save()
+                if self.config.is_logged and result:
+                    self._manifest_info["images"][image.img_name] = image.sized_url()
+                if progress_updater:
+                    progress_updater()
+                return result
 
+        progress = logger.create_progress() if show_progress else nullcontext()
         with progress:
-            main_task = progress.add_task(
-                f"[green]Downloading {len(images)} images with {self.config.threads} threads",
-                total=len(images)
+            task_id = progress.add_task(f"[green]Downloading {len(images)} image(s)", total=len(images)) if show_progress else None
+            updater = lambda: progress.update(task_id, advance=1) if show_progress else None
+
+            results = await asyncio.gather(
+                *[download_image(img, updater) for img in images],
+                return_exceptions=True
             )
-
-            thread_tasks = []
-            for i in range(self.config.threads):
-                task_id = progress.add_task(
-                    f"[cyan]Thread {i + 1}",
-                    total=1,
-                    visible=False
-                )
-                thread_tasks.append(task_id)
-
-            completed = 0
-            async def download_with_progress(image):
-                nonlocal completed
-
-                async with semaphore:
-                    task_idx = completed
-                    thread_idx = task_idx % self.config.threads
-                    progress.update(
-                        thread_tasks[thread_idx],
-                        visible=True,
-                        description=f"[cyan]Thread {thread_idx + 1}: {image.img_name}"
-                    )
-
-                    try:
-                        result = await image.save()
-                        completed += 1
-                        progress.update(main_task, advance=1)
-
-                        if self.config.is_logged and result:
-                            self._manifest_info["images"][image.img_name] = image.sized_url()
-                        elif not result:
-                            # Log non-exception failures
-                            logger.error(
-                                f"Failed to download image #{image.idx} ({image.sized_url()})"
-                            )
-
-                        return result
-
-                    except Exception as e:
-                        completed += 1
-                        progress.update(main_task, advance=1)
-                        logger.error(
-                            f"Failed to download image #{image.idx} ({image.sized_url()}): {e}"
-                        )
-                        return False
-
-                    finally:
-                        progress.update(thread_tasks[thread_idx], visible=False)
-
-            download_tasks = [download_with_progress(image) for image in images]
-            results = await asyncio.gather(*download_tasks, return_exceptions=True)
 
         success_count = sum(1 for r in results if r is True)
         failed_count = len(results) - success_count
+        elapsed = time.perf_counter() - start_time
 
-        logger.info(
-            f"Download complete: {success_count}/{len(images)} succeeded, {failed_count} failed"
-        )
+        if show_progress:
+            logger.success(
+                f"Downloaded {success_count}/{len(images)} image(s) in {elapsed:.1f}s ({success_count / elapsed:.1f} img/s)"
+            )
+            if failed_count > 0:
+                logger.warning(f"{failed_count}/{len(images)} image(s) failed")
+
         self.save_log()
-
-        await self.config.release_session()
+        await self.config.close_session()
         return self
 
     def download(
-        self, save_dir: Optional[Union[Path, str]] = None, cleanup=False
-    ) -> Union[bool, "IIIFManifest"]:
+        self, save_dir: Optional[Union[Path, str]] = None, cleanup: bool = False, show_progress: bool = False
+    ) -> "IIIFManifest":
         if save_dir:
             self.save_dir = save_dir
         if not self.save_dir.exists():
             create_dir(self.save_dir)
 
         try:
-            result = asyncio.run(self._async_download_manifest())
+            result = asyncio.run(self._async_download_manifest(show_progress=show_progress))
         finally:
-            #logger.info(f"Downloaded {}/{len(self.images)} images from {self.url} into {self.save_dir} in {} secondes")
             if cleanup:
                 self.cleanup()
         return result
