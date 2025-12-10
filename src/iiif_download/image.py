@@ -62,9 +62,11 @@ class IIIFImage:
                 return True
 
             # TODO check if semaphore works for gallica
-            async with config.semaphore:
-                self.size = self.get_max_size()
-                return await self.download()
+            # async with config.semaphore:
+            #     self.size = self.get_max_size()
+            #     return await self.download()
+            self.size = self.get_max_size()
+            return await self.download()
         except Exception as e:
             logger.error(f"Failed to save image {self.sized_url()}", exception=e)
             return False
@@ -72,7 +74,8 @@ class IIIFImage:
     async def download(self, url=None) -> bool:
         """Download and save the image using configured settings."""
         url = url or self.sized_url()
-        time.sleep(self.sleep)
+        # time.sleep(self.sleep)
+        await config.wait_for_domain(url)
 
         try:
             async with async_request(url, allow_insecure=True) as res:

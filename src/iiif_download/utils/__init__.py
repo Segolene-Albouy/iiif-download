@@ -76,50 +76,31 @@ async def async_request(
     allow_insecure: bool = False,
     **kwargs,
 ) -> ClientResponse:
-    """
-    Async context manager for making HTTP requests with proper proxy and error handling.
+    """Async request using shared session."""
+    session = await config.get_session()
 
-    Args:
-        url: The URL to request
-        method: HTTP method (default: "GET")
-        headers: Optional dictionary of headers
-        timeout: Optional timeout in seconds (default: from config)
-        allow_insecure: If True, allows fallback to insecure connection on SSL errors
-        **kwargs: Additional arguments to pass to session.request
+    proxy = None
+    if config.proxy_settings:
+        scheme = "https" if url.startswith("https") else "http"
+        proxy = config.proxy_settings.get(scheme)
 
-    Usage:
-        async with async_request("https://example.com") as response:
-            if response.ok:
-                data = await response.read()
-    """
-    proxy = (
-        config.proxy_settings.get("https" if url.startswith("https") else "http")
-        if config.proxy_settings
-        else None
-    )
-
-    request_headers = {"User-Agent": config.user_agent}
-    if headers:
-        request_headers.update(headers)
-
-    timeout_value = timeout or config.timeout
-
+    kwargs = {
+        **kwargs,
+        "headers": headers or None,
+        "timeout": ClientTimeout(total=timeout) if timeout else None,
+        "proxy": proxy
+    }
     try:
-        async with ClientSession(trust_env=True, timeout=ClientTimeout(total=timeout_value)) as session:
-            async with session.request(
-                method, url, headers=request_headers, proxy=proxy, **kwargs
-            ) as response:
-                yield response
+        async with session.request(method, url, **kwargs) as response:
+            yield response
     except ClientSSLError as ssl_error:
         if not allow_insecure:
             raise ssl_error
 
-        ssl_kwargs = {**kwargs, "ssl": False}
-        async with ClientSession(trust_env=True, timeout=ClientTimeout(total=timeout_value)) as session:
-            async with session.request(
-                method, url, headers=request_headers, proxy=proxy, **ssl_kwargs
-            ) as response:
-                yield response
+        # Fallback to insecure connection
+        kwargs = {**kwargs, "ssl": False}
+        async with session.request(method, url, **kwargs) as response:
+            yield response
 
 
 def get_id(dic):

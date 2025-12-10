@@ -7,9 +7,10 @@ providing both default values and methods to override them.
 
 import copy
 import os
-from asyncio import Semaphore
 from pathlib import Path
 from typing import Dict, Optional, Union
+from aiohttp import ClientSession, TCPConnector, ClientTimeout
+import asyncio
 
 
 class Config:
@@ -30,11 +31,16 @@ class Config:
         # Network settings
         self._retry_attempts = 3
         self._sleep_time = {"default": 0.05, "gallica": 12}
-        self._threads = 20
-        self._semaphore = Semaphore(self._threads)
         self._timeout = 120  # 2 minutes
         self._user_agent = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0"
         self._proxy_settings = {}
+
+        # Threading
+        self._threads = 20
+        self._session: Optional[ClientSession] = None
+        self._session_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._domain_locks: Dict[str, Dict] = {}
+        self._locks_loop: Optional[asyncio.AbstractEventLoop] = None
 
         # Dev settings
         self._debug = False
@@ -82,7 +88,6 @@ class Config:
 
         if threads := os.getenv("IIIF_THREADS"):
             self._threads = int(threads)
-            self._semaphore = Semaphore(self._threads)
 
         if debug := os.getenv("IIIF_DEBUG"):
             self._debug = debug.lower() in ("true", "1", "yes")
@@ -219,7 +224,6 @@ class Config:
 
     @property
     def threads(self) -> int:
-        """Number of concurrent threads for downloads."""
         return self._threads
 
     @threads.setter
@@ -227,17 +231,10 @@ class Config:
         if value < 1:
             raise ValueError("Thread count must be at least 1")
         self._threads = value
-        self._semaphore = Semaphore(value)
-
-    @property
-    def semaphore(self) -> Semaphore:
-        return self._semaphore
-
-    @semaphore.setter
-    def semaphore(self, value: int):
-        if value < 0:
-            raise ValueError("Semaphore value must be positive")
-        self._semaphore = Semaphore(value)
+        # Force recreation on next get_session() call
+        # Don't close here - might not be in async context
+        self._session = None
+        self._session_loop = None
 
     @property
     def debug(self) -> bool:
@@ -315,6 +312,78 @@ class Config:
 
     def copy(self):
         return copy.copy(self)
+
+    async def get_session(self) -> ClientSession:
+        """Get session for current event loop (creates new if loop changed)."""
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            raise RuntimeError("get_session must be called from async context")
+
+        # Recreate session if loop changed or session is closed
+        if self._session is None or self._session.closed or self._session_loop is not current_loop:
+            if self._session and not self._session.closed:
+                await self._session.close()
+
+            connector = TCPConnector(
+                limit=self._threads * 2,  # Total simultaneous connections
+                limit_per_host=5,  # Per domain (prevents hammering)
+                ttl_dns_cache=300  # Cache DNS for 5 min
+            )
+
+            self._session = ClientSession(
+                connector=connector,
+                timeout=ClientTimeout(total=self._timeout),
+                headers={"User-Agent": self._user_agent},
+                trust_env=True
+            )
+            self._session_loop = current_loop
+        return self._session
+
+    async def close_session(self):
+        """Cleanup session (call at end of operations)."""
+        if self._session and not self._session.closed:
+            await self._session.close()
+            self._session = None
+            self._session_loop = None
+
+    @staticmethod
+    def _extract_domain(url: str) -> str:
+        """Extract domain from URL for rate limiting."""
+        from urllib.parse import urlparse
+        return urlparse(url).netloc
+
+    async def wait_for_domain(self, url: str):
+        """Rate limit requests by domain."""
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        if self._locks_loop is not current_loop:
+            self._domain_locks = {}
+            self._locks_loop = current_loop
+
+        domain = self._extract_domain(url)
+
+        if domain not in self._domain_locks:
+            self._domain_locks[domain] = {
+                "lock": asyncio.Lock(),
+                "last_request": 0
+            }
+
+        lock_info = self._domain_locks[domain]
+
+        async with lock_info["lock"]:
+            import time
+            now = time.time()
+            elapsed = now - lock_info["last_request"]
+            sleep_time = self.get_sleep_time(url)
+
+            if elapsed < sleep_time:
+                await asyncio.sleep(sleep_time - elapsed)
+
+            lock_info["last_request"] = time.time()
 
 
 # Global configuration instance

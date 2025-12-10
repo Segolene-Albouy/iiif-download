@@ -11,7 +11,6 @@ https://content.staatsbibliothek-berlin.de/dc/744029791/manifest
 https://bibnum.institutdefrance.fr/iiif/22490/manifest
 https://api.digitale-sammlungen.de/iiif/presentation/v2/bsb00045298/manifest
 https://digitalcollections.universiteitleiden.nl/iiif_manifest/item%3A1572906/manifest
-https://collections.library.yale.edu/manifests/16960303
 https://iiif.slub-dresden.de/iiif/2/323548814/manifest.json
 https://iiif.nli.org.il/IIIFv21/DOCID/PNX_MANUSCRIPTS990001221250205171-1/manifest
 https://mazarinum.bibliotheque-mazarine.fr/iiif/2134/manifest
@@ -29,8 +28,11 @@ https://digi.ub.uni-heidelberg.de/diglit/iiif/cpg765/manifest.json
 https://www.digitalcollections.manchester.ac.uk/iiif/MS-ENGLISH-00078
 https://iiif.library.utoronto.ca/presentation/v2/fisher2:F6521/manifest
 https://sharedcanvas.be/IIIF/manifests/B_OB_MS618
-https://gallica.bnf.fr/iiif/ark:/12148/btv1b11002469m/manifest.json
 https://rara.biblhertz.it/Ca-MAR125-2850-iiif
+# Limit to 5 images / minute download
+https://gallica.bnf.fr/iiif/ark:/12148/btv1b11002469m/manifest.json
+# download limit after 500 images
+https://collections.library.yale.edu/manifests/16960303
 
 # MANIFESTS EXPECTED TO FAIL
 # No more British library
