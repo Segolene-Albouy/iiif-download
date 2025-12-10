@@ -1,6 +1,58 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools>=80", "setuptools-scm[simple]>=8"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "iiif-download"
+dynamic = ["version"]
+authors = [
+    {name = "Segolene-Albouy", email = "segolene.albouy@gmail.com"},
+]
+description = "A Python package to download images from IIIF manifests"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+    "Pillow>=11.0.0",
+    "requests>=2.32.0",
+    "tqdm>=4.66.0",
+    "urllib3>=2.2.0",
+    "aiohttp>=3.10",
+    "aiofiles>=24.1.0",
+    "rich>=13.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=6.0.0",
+    "pytest-asyncio>=0.25.0",
+    "ruff>=0.4.7",
+    "setuptools-scm>=9.2.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/Segolene-Albouy/iiif-download"
+Documentation = "https://github.com/Segolene-Albouy/iiif-download#readme"
+Repository = "https://github.com/Segolene-Albouy/iiif-download"
+Issues = "https://github.com/Segolene-Albouy/iiif-download/issues"
+
+[project.scripts]
+iiif-download = "iiif_download.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.black]
 line-length = 110

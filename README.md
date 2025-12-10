@@ -59,7 +59,7 @@ iiif-download -f test-manifests.txt
 iiif-download -d custom/path/to/images
 ```
 
-## Metadata extraction
+### Metadata extraction
 
 ```python
 from iiif_download import IIIFManifest
@@ -69,4 +69,24 @@ manifest.load()
 lic = manifest.license
 author = manifest.get_meta("author")
 images = manifest.images
+```
+
+## Development
+
+Install locally
+```bash
+python -m venv venv && source venv/bin/activate
+pip install -e ".[dev]"
+```
+
+Run tests
+```bash
+pytest
+# pre-commit install
+pre-commit run --all-files
+```
+
+Publish on PyPi
+```bash
+git tag v<*.*.*> && git push origin v<*.*.*>
 ```

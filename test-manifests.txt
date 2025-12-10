@@ -11,6 +11,11 @@ https://content.staatsbibliothek-berlin.de/dc/744029791/manifest
 https://bibnum.institutdefrance.fr/iiif/22490/manifest
 https://api.digitale-sammlungen.de/iiif/presentation/v2/bsb00045298/manifest
 https://digitalcollections.universiteitleiden.nl/iiif_manifest/item%3A1572906/manifest
+<<<<<<< HEAD
+=======
+# download limit after 500 images
+https://collections.library.yale.edu/manifests/16960303
+>>>>>>> e5c98ca494e90ee5e5f310c746d30eb683ac9f1d
 https://iiif.slub-dresden.de/iiif/2/323548814/manifest.json
 https://iiif.nli.org.il/IIIFv21/DOCID/PNX_MANUSCRIPTS990001221250205171-1/manifest
 https://mazarinum.bibliotheque-mazarine.fr/iiif/2134/manifest

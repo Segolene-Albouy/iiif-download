@@ -1,6 +1,5 @@
 import gc
 import os
-import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -74,7 +73,6 @@ class IIIFImage:
     async def download(self, url=None) -> bool:
         """Download and save the image using configured settings."""
         url = url or self.sized_url()
-        # time.sleep(self.sleep)
         await config.wait_for_domain(url)
 
         try:

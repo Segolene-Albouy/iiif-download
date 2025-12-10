@@ -5,12 +5,15 @@ This module handles all configurable parameters of the package,
 providing both default values and methods to override them.
 """
 
+import asyncio
+from asyncio import Lock
 import copy
 import os
 from pathlib import Path
+from time import time
 from typing import Dict, Optional, Union
 from aiohttp import ClientSession, TCPConnector, ClientTimeout
-import asyncio
+from urllib.parse import urlparse
 
 
 class Config:
@@ -30,7 +33,7 @@ class Config:
 
         # Network settings
         self._retry_attempts = 3
-        self._sleep_time = {"default": 0.05, "gallica": 12}
+        self._sleep_time = {"default": 0.05, "gallica.bnf.fr": 12}
         self._timeout = 120  # 2 minutes
         self._user_agent = "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0"
         self._proxy_settings = {}
@@ -39,7 +42,7 @@ class Config:
         self._threads = 20
         self._session: Optional[ClientSession] = None
         self._session_loop: Optional[asyncio.AbstractEventLoop] = None
-        self._domain_locks: Dict[str, Dict] = {}
+        self._domain_locks = {}  # {domain: {'lock': Lock(), 'last_time': float}}
         self._locks_loop: Optional[asyncio.AbstractEventLoop] = None
 
         # Dev settings
@@ -205,22 +208,68 @@ class Config:
         """Sleep time between requests for different providers."""
         return self._sleep_time.copy()
 
-    def set_sleep_time(self, value: float, provider: str = "default") -> None:
+    def set_sleep_time(self, sec_nb: float, provider_domain: str = "default") -> None:
         """
         Set sleep time for a specific provider.
         """
-        if not isinstance(value, (int, float)):
+        if not isinstance(sec_nb, (int, float)):
             raise TypeError("Sleep time must be a number")
-        if value <= 0:
+        if sec_nb <= 0:
             raise ValueError("Sleep time must be positive")
+        if not isinstance(provider_domain, str):
+            raise TypeError("Provider domain must be a string")
 
-        self._sleep_time[provider] = float(value)
+        if provider_domain != "default":
+            parsed = urlparse(provider_domain if "://" in provider_domain else f"http://{provider_domain}")
+            provider_domain = parsed.netloc or "default"
+
+        self._sleep_time[provider_domain] = float(sec_nb)
 
     def get_sleep_time(self, url: Optional[str] = None) -> float:
         """Get sleep time for a specific URL."""
-        if url and "gallica" in url:
-            return self._sleep_time["gallica"]
+        if url:
+            domain = urlparse(url).netloc
+            if domain in self._sleep_time:
+                return self._sleep_time[domain]
         return self._sleep_time["default"]
+
+    def get_domain_lock(self, url: str):
+        domain = urlparse(url).netloc
+        if domain not in self._domain_locks:
+            self._domain_locks[domain] = {"lock": Lock(), "last_time": 0}
+        return self._domain_locks[domain]
+
+    async def wait_for_domain(self, url: str):
+        """Wait appropriate time before making request to respect rate limits per domain."""
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+
+        if self._locks_loop is not current_loop:
+            self._domain_locks = {}
+            self._locks_loop = current_loop
+
+        domain = self._extract_domain(url)
+
+        if domain not in self._domain_locks:
+            self._domain_locks[domain] = {
+                "lock": asyncio.Lock(),
+                "last_request": 0
+            }
+
+        lock_info = self._domain_locks[domain]
+
+        async with lock_info["lock"]:
+            import time
+            now = time.time()
+            elapsed = now - lock_info["last_request"]
+            sleep_time = self.get_sleep_time(url)
+
+            if elapsed < sleep_time:
+                await asyncio.sleep(sleep_time - elapsed)
+
+            lock_info["last_request"] = time.time()
 
     @property
     def threads(self) -> int:
@@ -231,8 +280,6 @@ class Config:
         if value < 1:
             raise ValueError("Thread count must be at least 1")
         self._threads = value
-        # Force recreation on next get_session() call
-        # Don't close here - might not be in async context
         self._session = None
         self._session_loop = None
 
@@ -352,38 +399,6 @@ class Config:
         """Extract domain from URL for rate limiting."""
         from urllib.parse import urlparse
         return urlparse(url).netloc
-
-    async def wait_for_domain(self, url: str):
-        """Rate limit requests by domain."""
-        try:
-            current_loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-
-        if self._locks_loop is not current_loop:
-            self._domain_locks = {}
-            self._locks_loop = current_loop
-
-        domain = self._extract_domain(url)
-
-        if domain not in self._domain_locks:
-            self._domain_locks[domain] = {
-                "lock": asyncio.Lock(),
-                "last_request": 0
-            }
-
-        lock_info = self._domain_locks[domain]
-
-        async with lock_info["lock"]:
-            import time
-            now = time.time()
-            elapsed = now - lock_info["last_request"]
-            sleep_time = self.get_sleep_time(url)
-
-            if elapsed < sleep_time:
-                await asyncio.sleep(sleep_time - elapsed)
-
-            lock_info["last_request"] = time.time()
 
 
 # Global configuration instance
