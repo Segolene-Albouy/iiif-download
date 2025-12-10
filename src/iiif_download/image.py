@@ -38,7 +38,6 @@ class IIIFImage:
         self.width = self.get_width()
 
         self.allow_truncation = config.allow_truncation
-        self.sleep = config.get_sleep_time(self.url)
 
     @property
     def img_path(self) -> Path:
@@ -60,10 +59,6 @@ class IIIFImage:
             if not re_download and self.check():
                 return True
 
-            # TODO check if semaphore works for gallica
-            # async with config.semaphore:
-            #     self.size = self.get_max_size()
-            #     return await self.download()
             self.size = self.get_max_size()
             return await self.download()
         except Exception as e:

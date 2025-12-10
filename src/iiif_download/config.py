@@ -6,11 +6,9 @@ providing both default values and methods to override them.
 """
 
 import asyncio
-from asyncio import Lock
 import copy
 import os
 from pathlib import Path
-from time import time
 from typing import Dict, Optional, Union
 from aiohttp import ClientSession, TCPConnector, ClientTimeout
 from urllib.parse import urlparse
@@ -42,7 +40,8 @@ class Config:
         self._threads = 20
         self._session: Optional[ClientSession] = None
         self._session_loop: Optional[asyncio.AbstractEventLoop] = None
-        self._domain_locks = {}  # {domain: {'lock': Lock(), 'last_time': float}}
+        self._session_refcount = 0
+        self._domain_locks = {}  # {domain: {'lock': Lock(), 'last_request': float}}
         self._locks_loop: Optional[asyncio.AbstractEventLoop] = None
 
         # Dev settings
@@ -87,7 +86,7 @@ class Config:
             self._retry_attempts = int(retries)
 
         if sleep_time := os.getenv("IIIF_SLEEP"):
-            self._sleep_time = {"default": float(sleep_time), "gallica": 12}
+            self._sleep_time["default"] = float(sleep_time)
 
         if threads := os.getenv("IIIF_THREADS"):
             self._threads = int(threads)
@@ -233,12 +232,6 @@ class Config:
                 return self._sleep_time[domain]
         return self._sleep_time["default"]
 
-    def get_domain_lock(self, url: str):
-        domain = urlparse(url).netloc
-        if domain not in self._domain_locks:
-            self._domain_locks[domain] = {"lock": Lock(), "last_time": 0}
-        return self._domain_locks[domain]
-
     async def wait_for_domain(self, url: str):
         """Wait appropriate time before making request to respect rate limits per domain."""
         try:
@@ -367,7 +360,6 @@ class Config:
         except RuntimeError:
             raise RuntimeError("get_session must be called from async context")
 
-        # Recreate session if loop changed or session is closed
         if self._session is None or self._session.closed or self._session_loop is not current_loop:
             if self._session and not self._session.closed:
                 await self._session.close()
@@ -385,6 +377,9 @@ class Config:
                 trust_env=True
             )
             self._session_loop = current_loop
+            self._session_refcount = 0
+
+        self._session_refcount += 1
         return self._session
 
     async def close_session(self):
@@ -393,6 +388,13 @@ class Config:
             await self._session.close()
             self._session = None
             self._session_loop = None
+            self._session_refcount = 0
+
+    async def release_session(self):
+        """Release session reference (closes when count reaches 0)."""
+        self._session_refcount -= 1
+        if self._session_refcount <= 0:
+            await self.close_session()
 
     @staticmethod
     def _extract_domain(url: str) -> str:

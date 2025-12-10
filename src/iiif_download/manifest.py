@@ -315,7 +315,7 @@ class IIIFManifest:
         )
         self.save_log()
 
-        await self.config.close_session()
+        await self.config.release_session()
         return self
 
     def download(
