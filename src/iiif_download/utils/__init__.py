@@ -48,13 +48,18 @@ async def get_json_async(url: str, allow_insecure: bool = False) -> Dict[str, An
     """
 
     async def parse_response(res: ClientResponse) -> Dict[str, Any]:
+        content_type = res.headers.get("Content-Type", "").lower()
+        if "html" in content_type:
+            text = await res.text()
+            raise ValueError(f"Server is secured with anti-bot system:\n\n{strip_tags(text)[:150]}...")
+
         try:
             return await res.json()
         except ContentTypeError:
             try:
                 return json.loads(await res.text())
             except json.JSONDecodeError as e:
-                raise ValueError(f"Content could not be parsed as JSON: {str(e)}") from e
+                raise ValueError(f"Content could not be parsed as JSON: {e}") from e
 
     try:
         async with async_request(url) as response:
@@ -86,12 +91,21 @@ async def async_request(
 
     kwargs = {
         **kwargs,
-        "headers": headers or None,
+        "headers": {
+            "User-Agent": config.user_agent,
+            "Accept": "application/ld+json, application/json, */*",
+            **(headers or {}),
+        },
         "timeout": ClientTimeout(total=timeout) if timeout else None,
         "proxy": proxy
     }
     try:
         async with session.request(method, url, **kwargs) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise ValueError(
+                    f"HTTP {response.status} {response.reason}: {error_text[:200]}"
+                )
             yield response
     except ClientSSLError as ssl_error:
         if not allow_insecure:
@@ -100,6 +114,11 @@ async def async_request(
         # Fallback to insecure connection
         kwargs = {**kwargs, "ssl": False}
         async with session.request(method, url, **kwargs) as response:
+            if not response.ok:
+                error_text = await response.text()
+                raise ValueError(
+                    f"HTTP {response.status} {response.reason}: {error_text[:200]}"
+                )
             yield response
 
 
@@ -136,15 +155,27 @@ class MLStripper(HTMLParser):
         super().__init__(convert_charrefs=False)
         self.reset()
         self.fed = []
+        self.skip = False
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ('style', 'script'):
+            self.skip = True
+
+    def handle_endtag(self, tag):
+        if tag in ('style', 'script'):
+            self.skip = False
 
     def handle_data(self, d):
-        self.fed.append(d)
+        if not self.skip:
+            self.fed.append(d)
 
     def handle_entityref(self, name):
-        self.fed.append("&%s;" % name)
+        if not self.skip:
+            self.fed.append("&%s;" % name)
 
     def handle_charref(self, name):
-        self.fed.append("&#%s;" % name)
+        if not self.skip:
+            self.fed.append("&#%s;" % name)
 
     def get_data(self):
         return "".join(self.fed)

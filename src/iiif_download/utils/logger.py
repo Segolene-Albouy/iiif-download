@@ -1,4 +1,6 @@
 import time
+import cProfile
+import pstats
 import json
 import logging
 import traceback
@@ -6,6 +8,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 from contextlib import contextmanager
 from functools import wraps
+
 
 from rich.console import Console
 from rich.progress import (
@@ -97,14 +100,16 @@ class Logger:
         """Log error message."""
         message = self.format(*msg)
 
+        err = ""
         if config.is_logged:
-            error_msg = message
             if exception:
-                error_msg += f"\n{traceback.format_exc()}"
-            self.file_logger.error(error_msg)
+                err = f"\n\n{traceback.format_exc()}"
+            self.file_logger.error(f"{message}{err}")
 
         if not self._quiet:
-            self.console.print(f"[red]❌ {message}[/red]")
+            if exception:
+                err = f"\n\n{traceback.format_exc(1)}"
+            self.console.print(f"[red]❌  {message}{err}[/red]")
 
     def warning(self, *msg: Any):
         """Log warning message."""
@@ -200,6 +205,27 @@ def timer(func):
             msg_type = "error"
 
         logger.log(f"\n[{func.__name__}]: {execution_time:.3f} secondes", msg_type=msg_type)
+        return result
+
+    return wrapper
+
+def profile(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        profiler = cProfile.Profile()
+        profiler.enable()
+
+        start_time = time.time()
+
+        result = func(*args, **kwargs)
+
+        end_time = time.time()
+        profiler.disable()
+
+        logger.log(f"\nFinished in {end_time - start_time:.2f} sec")
+        stats = pstats.Stats(profiler).sort_stats('cumtime')
+        logger.log("\nTOP 15 of most expensive functions (cumulative time)", msg_type="warning")
+        stats.print_stats(15)
         return result
 
     return wrapper
