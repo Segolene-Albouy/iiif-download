@@ -56,9 +56,6 @@ class Config:
         # Initialize from environment variables if present
         self._load_from_env()
 
-        # Create directories if they don't exist
-        self._create_dirs()
-
     def _load_from_env(self):
         """Load configuration from environment variables."""
         if path := os.getenv("IIIF_BASE_DIR"):
@@ -104,11 +101,6 @@ class Config:
             self._proxy_settings["https"] = https_proxy
 
         # TODO add is_logged, semaphore, user_agent, save_manifest
-
-    def _create_dirs(self):
-        """Create necessary directories if they don't exist."""
-        self._img_dir.mkdir(parents=True, exist_ok=True)
-        self._log_dir.mkdir(parents=True, exist_ok=True)
 
     def set_path(
         self, path: Optional[Union[str, Path]] = None, base_dir: Optional[Union[str, Path]] = None
