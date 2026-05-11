@@ -104,10 +104,11 @@ def test_config_env_override():
 
 
 def test_config_directory_creation():
-    """Test that config creates necessary directories"""
+    """Test that env-driven path settings create their directories via the setter."""
     test_base = Path("/tmp/iiif_test")
     os.environ["IIIF_BASE_DIR"] = str(test_base)
     os.environ["IIIF_IMG_DIR"] = "test_img"
+    os.environ["IIIF_LOG_DIR"] = "test_log"
 
     config = Config()
 
@@ -115,12 +116,15 @@ def test_config_directory_creation():
     assert config.img_dir.exists()
     assert config.log_dir.exists()
     assert config.img_dir.name == "test_img"
+    assert config.log_dir.name == "test_log"
 
     # Cleanup
     import shutil
 
     shutil.rmtree(test_base)
     del os.environ["IIIF_BASE_DIR"]
+    del os.environ["IIIF_IMG_DIR"]
+    del os.environ["IIIF_LOG_DIR"]
 
 
 def test_proxy_settings():
