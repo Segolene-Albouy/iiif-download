@@ -165,6 +165,9 @@ class IIIFManifest:
                 label = canvas.get("label", "")
                 for image in canvas["images"]:
                     if resource := self.get_image_resource(image, label=label):
+                        for dim in ("height", "width"):
+                            if dim not in resource and (val := canvas.get(dim)):
+                                resource[dim] = val
                         resources.append(resource)
         except KeyError:
             try:
@@ -173,6 +176,9 @@ class IIIFManifest:
                 for item in items:
                     for sub_item in item["items"][0]["items"]:
                         if resource := self.get_image_resource(sub_item):
+                            for dim in ("height", "width"):
+                                if dim not in resource and (val := item.get(dim)):
+                                    resource[dim] = val
                             resources.append(resource)
             except (KeyError, IndexError, TypeError) as e:
                 logger.error("Failed to extract images from manifest", exception=e)

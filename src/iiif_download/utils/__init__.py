@@ -48,6 +48,10 @@ async def get_json_async(url: str, allow_insecure: bool = False) -> Dict[str, An
     """
 
     async def parse_response(res: ClientResponse) -> Dict[str, Any]:
+        if not res.ok:
+            error_text = await res.text()
+            raise ValueError(f"HTTP {res.status} {res.reason}: {error_text[:200]}")
+
         content_type = res.headers.get("Content-Type", "").lower()
         if "html" in content_type:
             text = await res.text()
@@ -101,11 +105,6 @@ async def async_request(
     }
     try:
         async with session.request(method, url, **kwargs) as response:
-            if not response.ok:
-                error_text = await response.text()
-                raise ValueError(
-                    f"HTTP {response.status} {response.reason}: {error_text[:200]}"
-                )
             yield response
     except ClientSSLError as ssl_error:
         if not allow_insecure:
@@ -114,11 +113,6 @@ async def async_request(
         # Fallback to insecure connection
         kwargs = {**kwargs, "ssl": False}
         async with session.request(method, url, **kwargs) as response:
-            if not response.ok:
-                error_text = await response.text()
-                raise ValueError(
-                    f"HTTP {response.status} {response.reason}: {error_text[:200]}"
-                )
             yield response
 
 

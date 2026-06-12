@@ -77,6 +77,10 @@ class IIIFImage:
                         # try one last time without coord/size/rot/default.jpg
                         # if institution does not implement Image API and only serves static images
                         return await self.download(self.url)
+                    if res.status == 400 and self.size not in ("max", "full") and url != self.url:
+                        # server rejected constrained size (e.g. sizeAboveFull not supported)
+                        self.size = "max"
+                        return await self.download()
                     self.download_fail(f"⛔️ Failed to download {url}: status {res.status}")
                     return False
                 return await self.process_response(res)
