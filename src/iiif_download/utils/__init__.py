@@ -78,10 +78,11 @@ async def get_json_async(url: str, allow_insecure: bool = False) -> Dict[str, An
             return await parse_response(response)
 
 
+# TODO: see if there are conflicts with `self._sleep_time`
 # retry 5 times, waiting 1-5 seconds between each
 @tenacity.retry(
     retry=tenacity.retry_if_exception_type(ClientResponseError),
-    stop=tenacity.stop_after_attempt(5),  # 5 total attempts
+    stop=tenacity.stop_after_attempt(config.retry_attempts),
     wait=tenacity.wait_exponential(multiplier=1, min=1, max=5),
     reraise=True,
 )
