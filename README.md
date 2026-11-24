@@ -79,7 +79,7 @@ Run all commands from the root of the `iiif-download` repo.
 
 
 ```bash
-install dependencies
+# install dependencies
 uv sync --extra dev
 
 # use the CLI
