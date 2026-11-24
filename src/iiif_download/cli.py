@@ -74,9 +74,11 @@ def main():
                 with logger.quiet_mode():
                     result = manifest.download(cleanup=not only_one, progress=progress)
 
-                if result:
+                success_summary = result.get_success_summary()
+                if success_summary["success"]:
                     success_count += 1
                 else:
+                    logger.warning(f"Error downloading images from {url} ({success_summary['ok']} images downloaded successfully, {success_summary['err']} failed)")
                     failed_count += 1
 
             except Exception as e:
@@ -89,7 +91,7 @@ def main():
     if success_count > 0:
         logger.success(f"Downloaded {success_count} manifest(s) successfully")
     if failed_count > 0:
-        logger.warning(f"{failed_count} manifest(s) failed")
+        logger.warning(f"{failed_count} manifest(s) failed. See log files at: {logger.log_dir}")
 
     return 0 if failed_count == 0 else 1
 

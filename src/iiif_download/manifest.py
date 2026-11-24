@@ -62,6 +62,8 @@ class IIIFManifest:
         self._license: Optional[str] = None
         self._resources: Optional[List] = None
         self._images: Optional[List[IIIFImage]] = None
+        # counter of successfull downloads
+        self._success_count = 0
 
     @property
     def save_dir(self) -> Path:
@@ -92,6 +94,17 @@ class IIIFManifest:
             logger.error(f"Failed to load manifest from {self.url}", exception=e)
             logger.log_failed_manifests(self.url)
             return False
+
+    def get_success_summary(self) -> dict:
+        return {
+            # success if >1 image downloaded + all image downloads have succeeded
+            "success": (
+                self._success_count == len(self._images or [])
+                and self._success_count > 0
+            ),
+            "ok": self._success_count,
+            "err": len(self._images or []) - self._success_count or 0
+        }
 
     def get_meta(self, label: str) -> Optional[str]:
         if not self.content or "metadata" not in self.content:
@@ -282,6 +295,8 @@ class IIIFManifest:
         if failed_count > 0:
             logger.warning(f"{failed_count}/{len(images)} image(s) failed")
 
+        self._success_count = success_count
+
         self.save_log()
         await self.config.close_session()
         return self
@@ -295,7 +310,7 @@ class IIIFManifest:
             create_dir(self.save_dir)
 
         try:
-            result = asyncio.run(self._async_download_manifest(progress=progress))
+            result: "IIIFManifest" = asyncio.run(self._async_download_manifest(progress=progress))
         finally:
             if cleanup:
                 self.cleanup()
