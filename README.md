@@ -73,6 +73,30 @@ images = manifest.images
 
 ## Development
 
+### With `uv`
+
+Run all commands from the root of the `iiif-download` repo.
+
+Install dependencies:
+
+```bash
+uv sync --extra dev
+```
+
+Use the CLI:
+
+```bash
+./.venv/bin/iiif-download
+```
+
+Run the tests:
+
+```bash
+./.venv/bin/pytest
+```
+
+### With `pip`
+
 Install locally
 ```bash
 python -m venv venv && source venv/bin/activate
