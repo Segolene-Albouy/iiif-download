@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional, Union
 from urllib.parse import unquote
 import time
 
+from rich.progress import TaskID
+
 from .config import Config, config
 from .image import IIIFImage
 from .utils import (
@@ -264,7 +266,7 @@ class IIIFManifest:
         # Semaphore local (event-loop safe)
         semaphore = asyncio.Semaphore(self.config.threads)
 
-        async def download_image(image, task):
+        async def download_image(image: IIIFImage, task: TaskID):
             async with semaphore:
                 try:
                     result = await image.save()
