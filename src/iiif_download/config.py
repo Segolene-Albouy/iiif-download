@@ -185,7 +185,6 @@ class Config:
     @property
     def retry_attempts(self) -> int:
         """Number of retry attempts for failed downloads."""
-        # TODO use
         return self._retry_attempts
 
     @retry_attempts.setter

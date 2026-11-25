@@ -10,13 +10,12 @@ authors = [
 ]
 description = "A Python package to download images from IIIF manifests"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9.0"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -33,6 +32,7 @@ dependencies = [
     "aiohttp>=3.10",
     "aiofiles>=24.1.0",
     "rich>=13.9.0",
+    "tenacity>=9.1.2",
 ]
 
 [project.optional-dependencies]

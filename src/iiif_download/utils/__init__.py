@@ -4,10 +4,12 @@ from contextlib import asynccontextmanager
 from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, AsyncIterator
 
+
+import tenacity
 import aiofiles
-from aiohttp import ClientResponse, ClientSession, ClientSSLError, ClientTimeout, ContentTypeError
+from aiohttp import ClientResponse, ClientSession, ClientSSLError, ClientTimeout, ContentTypeError, ClientResponseError
 
 from ..config import config
 
@@ -76,6 +78,26 @@ async def get_json_async(url: str, allow_insecure: bool = False) -> Dict[str, An
             return await parse_response(response)
 
 
+# TODO: see if there are conflicts with `self._sleep_time`
+# retry 5 times, waiting 1-5 seconds between each
+@tenacity.retry(
+    retry=tenacity.retry_if_exception_type(ClientResponseError),
+    stop=tenacity.stop_after_attempt(config.retry_attempts),
+    wait=tenacity.wait_exponential(multiplier=1, min=1, max=5),
+    reraise=True,
+)
+async def _open_response(method: str, url: str, **kwargs) -> ClientResponse:
+    """Send the request and retry on HTTP error statuses."""
+    session = await config.get_session()
+    response = await session.request(method, url, **kwargs)
+    try:
+        response.raise_for_status()  # turns 4xx/5xx into ClientResponseError
+    except ClientResponseError:
+        response.release()
+        raise
+    return response
+
+
 @asynccontextmanager
 async def async_request(
     url: str,
@@ -84,36 +106,39 @@ async def async_request(
     timeout: Optional[int] = None,
     allow_insecure: bool = False,
     **kwargs,
-) -> ClientResponse:
+) -> AsyncIterator[ClientResponse]:
     """Async request using shared session."""
-    session = await config.get_session()
-
     proxy = None
     if config.proxy_settings:
         scheme = "https" if url.startswith("https") else "http"
         proxy = config.proxy_settings.get(scheme)
 
-    kwargs = {
+    request_kwargs = {
         **kwargs,
         "headers": {
             "User-Agent": config.user_agent,
             "Accept": "application/ld+json, application/json, */*",
             **(headers or {}),
         },
-        "timeout": ClientTimeout(total=timeout) if timeout else None,
-        "proxy": proxy
+        "proxy": proxy,
     }
-    try:
-        async with session.request(method, url, **kwargs) as response:
-            yield response
-    except ClientSSLError as ssl_error:
-        if not allow_insecure:
-            raise ssl_error
+    if timeout is not None:
+        request_kwargs["timeout"] = ClientTimeout(total=timeout)
 
-        # Fallback to insecure connection
-        kwargs = {**kwargs, "ssl": False}
-        async with session.request(method, url, **kwargs) as response:
-            yield response
+    try:
+        response = await _open_response(method, url, **request_kwargs)
+    except ClientSSLError:
+        if not allow_insecure:
+            raise
+        # fall back to an unverified connection
+        response = await _open_response(
+            method, url, **{**request_kwargs, "ssl": False}
+        )
+
+    # the yield is outside the try, so exceptions from the
+    # caller's body never trigger the SSL fallback
+    async with response:
+        yield response
 
 
 def get_id(dic):

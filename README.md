@@ -73,20 +73,37 @@ images = manifest.images
 
 ## Development
 
-Install locally
+### With `uv`
+
+Run all commands from the root of the `iiif-download` repo.
+
+
 ```bash
-python -m venv venv && source venv/bin/activate
-pip install -e ".[dev]"
+# install dependencies
+uv sync --extra dev
+
+# use the CLI
+./.venv/bin/iiif-download
+
+# run the tests
+./.venv/bin/pytest
 ```
 
-Run tests
+### With `pip`
+
 ```bash
+# install locally
+python -m venv venv && source venv/bin/activate
+pip install -e ".[dev]"
+
+# run tests
 pytest
 # pre-commit install
 pre-commit run --all-files
 ```
 
-Publish on PyPi
+### Publish on PyPi
+
 ```bash
 git tag v<*.*.*> && git push origin v<*.*.*>
 ```
