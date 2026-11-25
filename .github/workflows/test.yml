@@ -17,9 +17,14 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          # Install a specific version of uv.
+          version: "0.13.10"
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - run: |
-          pip install -e ".[dev]"
-          pytest
+          uv sync --extra dev
+          .venv/bin/pytest
